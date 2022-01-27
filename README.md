@@ -1,4 +1,6 @@
 # -
+![78b9ca549b637ba5c6e0f763cf8caea](https://user-images.githubusercontent.com/5507321/151349444-d7ef1bb5-6ad0-4433-9f07-ee5fede2a7e4.png)
+
 写在前面的话:
 应该有很多朋友遇到插件包更新后, 自己的配置消失了
 或者 每次更新完插件包都要自己折腾半天的经历
