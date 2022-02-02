@@ -1,4 +1,5 @@
 from ast import Assign
+from itertools import count
 import os
 import re
 import shutil
@@ -17,24 +18,30 @@ class ZFile():
         self.files= {'fList':[], 'dList':[]} #文件/夹列表字典
 
 
-    def GetPathList(self, rootPath):
+    def GetPathList(self, rootPath, recursion = True):
         """[递归遍历文件夹里面所有文件夹和文件，将它们保存在成员变量files中]
 
         Args:
             rootPath ([string]): [要检索的根目录]
+            recursion 控制是否遍历子目录
         """
         dirs = os.listdir(rootPath)
         for file in dirs:
             # 获取目录或者文件的路径
-            path = os.path.join(rootPath, file)
+            if rootPath:
+                path = os.path.join(rootPath, file)
+            else:
+                 path = file
             # 判断该路径为文件还是路径
             if os.path.isdir(path):
                 self.files['dList'].append(path)
                 # 递归获取所有文件和目录的路径
-                self.GetPathList(path)
+                if recursion:
+                    self.GetPathList(path)
             else:
                 self.files['fList'].append(path)
-        
+        return self.files
+
 
     def RemoveFile(self, rootPath, rFile):
         """
@@ -59,7 +66,9 @@ class ZFile():
                 print(f"完成")
                 count += 1
         
-        print(f"查找文件:{rFile} 共删除了 {count} 个")
+        # print(f"查找文件:{rFile} 共删除了 {count} 个")
+        return count
+        
 
 
     def Finish(self):
@@ -101,8 +110,11 @@ class ZFile():
             f.write(data)
 
     def WriteLines(self, file, data):
-        with open(file, 'w', encoding='UTF-8') as f:
-            f.writelines(data)
+        try:
+            with open(file, 'w', encoding='UTF-8') as f:
+                f.writelines(data)
+        except FileNotFoundError:
+            print(f"文件路径不正确, 请检查后重试, 或者报告作者: {file}")
 
 
 class CZipFile:
@@ -210,12 +222,12 @@ class CZipFile:
                                 zf.open(fileinfo.filename), outputfile)
                             print("完成.")
                     except FileNotFoundError:
-                        self.mkdir(filename)
+                        self.MkDir_re(filename)
                     # except FileExistsError:
                     #     if not os.path.isdir(p):
                     #         pass
                     except OSError:
-                        self.mkdir(filename)
+                        self.MkDir_re(filename)
 
     def extract2(self, zipfile, item_name):
         """[释放文件, 在遇到已存在的文件时跳过释放]
@@ -265,6 +277,8 @@ class WOW_WA(ZFile):
         self.wa_zipfile_path = 'WTF/Account/'+account+'/SavedVariables/WeakAuras.lua'
         self.tableInZip = []
         self.table = []
+        self.coords =(0,0)
+        self.coord =0
                 
 
     def finish(self):
@@ -281,12 +295,29 @@ class WOW_WA(ZFile):
 
         self.table = self.ReadLines(self.wa_file_path)
 
+
     def WriteWA(self):
-        self.WriteLines(self.wa_file_path, self.table)    
+        # self.WriteLines(self.wa_file_path, self.table)    
+        dirs =self.GetPathList('WTF\\Account', False)["dList"]
+        for dir in dirs:
+            if 'SavedVariables' not in dir:
+                self.WriteLines(dir + "\\SavedVariables\\WeakAuras.lua", self.table)   
 
 
     def readTable(self, str, i):
         pass
+
+
+    def IsChild(self, val, key):
+        """val是否是key的子项
+
+        Args:
+            val ([type]): [description]
+            key ([type]): [description]
+        """
+        
+        pass
+
 
     def Escape(self, str):
         #转义字符串
@@ -320,13 +351,14 @@ class WOW_WA(ZFile):
         print(f"\r生成备份文件: {file}...完成")
 
 
-    def WA_Del(self, key, begin = 0, end = 0):
+    def WA_Del(self, key,begin = 0, end = 0):
         if not begin and not end :
             begin, end = self.GetTable(key, self.table)
 
         if not begin:
             # raise AssertionError(f"没有找到想要删除的项: {key}, 请检查你要删除的内容")
             print(f"没有找到要删除的WA项: {key}, 可能已经被删除或是填写错误请检查你要删除的内容")
+        # elif self.IsChild(key, )
         else:
             print(f"删除WA项: {key}")
             self.table[begin:end] = []
@@ -348,21 +380,25 @@ class WOW_WA(ZFile):
             for v in wa['controlledChildren']:
                 self.WA_Del(v)
 
-            
-
+    def GetCoords(self, key = '【露露】TBC消耗品01'):
+        self.coords = self.GetTable('【露露】TBC消耗品01', self.table)
+        if 0 in self.coords:
+             raise AssertionError(f"获取WA定位点失败既将退出, 请将错误反馈给作者!")
+        self.coord = self.coords[1]
+        return self.coords
 
     def InsertTable(self, table, wa, key):
         begin, end = self.GetTable(key, table)
-        if begin: 
+        if begin and end: 
             print(f"导入已存在的wa:{key} 覆盖升级")
             table[begin:end] = wa   #如果存在就覆盖插入
         else:
-            location, end = self.GetTable('【露露】TBC消耗品01', table)
-            table[location:location] = wa   #插入
+            table[self.coord:self.coord] = wa   #插入
 
     def rec_go(self, zipfile, wa):
         self.ReadWA(zipfile)
         self.WAS_Del(wa['del'])
+        self.GetCoords()
         self.WA_Import(wa['rec'])
         self.WriteWA()
 
@@ -374,20 +410,24 @@ class WOW_WA(ZFile):
             'child':[]
             }
 
-            print(f"导入WA组项目:{v}")
+            print(f"导入WA组项目:{v}", end="")
             #读入备份内容
-            self.fillParent(self.tableInZip, wa, v)  #填充父节点内容
+            coords = self.fillParent(self.tableInZip, wa, v)  #填充父节点内容
+            if 0 in coords:
+                print(f"\n在原备份文件中没有找到{v}, 填充失败\n")
+                continue
+            # print(f'\r正在填充节点:{v} ...完成')
             self.fillChild(wa)                #填充子节点节点名内容
+            self.InsertTable(self.table, wa['parent'], v)
 
             for v in wa['controlledChildren']:
                 self.fillParent(self.tableInZip, wa, v, 'child')  #填充父节点内容
                 self.InsertTable(self.table, wa['child'], v)
+            
+            print(f"\r导入WA组项目:{v}...成功")
 
-            self.InsertTable(self.table, wa['parent'], v)
 
         
-
-
     def WA_Export(self, parentName):
         table = self.ReadLines(self.wa_file_path)
         
@@ -422,28 +462,25 @@ class WOW_WA(ZFile):
 
 
     def fillParent(self, table, wa, parentName, node = 'parent'):
-        print(f'正在填充节点:{parentName}', end='')
+        # print(f'正在填充节点:{parentName}', end='')
         begin, end = self.GetTable(parentName, table)
-        if begin:
+        if begin and end:
             wa[node] = table[begin:end]
-
-        # for i in range(begin, end):
-        #     wa[node].append(table[i])
-        
-        print(f'\r正在填充节点:{parentName} ...完成')
         return begin, end
 
 
-    def GetTable(self, key, table, isChild= False, begin = 0, end = 0):
+    def GetTable_Precise(self, key, table, isChild= False, begin = 0, end = 0):
         """获取表范围"""
         l = len(table)
         tab = R"\t\t"
-        beginp=R'^'+tab+'\["'+ key +'.*?"\] = {'
-        endp = R'^'+tab+'\[".*?"\] = {'
+        beginp=R'^'+tab+'\["'+ key +'"\] = {'
+        # endp = R'^'+tab+'\[".*?"\] = {'
+        endp = R'^'+tab+'\},'
         if isChild:
             tab = R"\t\t\t"
-            beginp=R'^'+tab+'\["'+ key +'.*?"\] = {'
-            endp = R'^'+tab+'\[".*?"\] = .*?'
+            beginp=R'^'+tab+'\["'+ key +'"\] = {'
+            # endp = R'^'+tab+'\[".*?"\] = .*?'
+            endp = R'^'+tab+'\},'
         
         start = end 
         for i in range(start, l):
@@ -451,11 +488,46 @@ class WOW_WA(ZFile):
                 # print(table[i])
                 begin = i
             elif begin !=0  and re.match(endp, table[i]):
-                end = i
+                end = i+1 #新配置减少了1加上
                 # print(table[i])
                 break
         return begin,end
+
+    def GetTable(self, key, table, isChild= False, begin = 0, end = 0, isFuzzy=False):
+        """获取表范围"""
+        l = len(table)
+        tab = R"\t\t"
+        fuzzy = ''
+        if  isFuzzy:
+            fuzzy = '.*?'
             
+
+        beginp=R'^'+tab+'\["'+ key +fuzzy+'"\] = {'
+        # endp = R'^'+tab+'\[".*?"\] = {'
+        endp = R'^'+tab+'\},'
+        if isChild:
+            tab = R"\t\t\t"
+            beginp=R'^'+tab+'\["'+ key +fuzzy+'"\] = {'
+            # endp = R'^'+tab+'\[".*?"\] = .*?'
+            endp = R'^'+tab+'\},'
+        
+        start = end 
+        for i in range(start, l):
+            if re.match(beginp, table[i]):
+                # print(table[i])
+                begin = i
+            elif begin !=0  and re.match(endp, table[i]):
+                end = i+1 #新配置减少了1加上
+                # print(table[i])
+                break
+
+        #第一次精确搜索, 找不到第二次模糊搜索
+        if 0 in (begin, end) and not isFuzzy:
+            begin, end = self.GetTable(key, table, isChild, 0, 0, isFuzzy=True)
+        
+        return begin,end
+
+
     def GetTableChild(self, key, table, l):
         begin=0
         end=0
@@ -468,7 +540,6 @@ class WOW_WA(ZFile):
                 # print(table[i])
                 break
         return begin,end
-
 
 
 class CBandizip(CZipFile):
@@ -606,7 +677,22 @@ class CWOWAddon(CBandizip):
             print(f"删除插件: {l} ")
             super().removedirs(l)
 
+    def RmBakFile(self):
+        f = ZFile()
+        files =f.GetPathList(f'Bak\\{self.GetAddonName()}', False)["fList"]
+        zipfiles= []
+        for file in files:
+            if ".zip" in file:
+                zipfiles.append(file)
 
+        zipfiles.sort()
+        l = len(zipfiles)
+        for i in range(l):
+            if l - i >2:
+                os.remove(zipfiles[i])
+                print(f"清理多余备份文件: {zipfiles[i]}")
+        
+        
 
     def Bak(self):
         """[备份WOW插件]
@@ -616,6 +702,9 @@ class CWOWAddon(CBandizip):
         self.MkDir_re(path)
         # os.system(FR"copy /y 恢复魔改配置.py Bak\{self.GetAddonName()}\恢复魔改配置.py")
         
+        #备份文件保留3个(算上本次), 太多了占用亲的空间^_^
+        self.RmBakFile()  
+
         with open(f"LostBak.txt", "w") as f:
             f.write(path)
 
@@ -634,13 +723,14 @@ class CWOWAddon(CBandizip):
         # waObj = WOW_WA(account)
         # waObj.rec_go(zipfile, self.WA)
         # exit()
+
+        self.extract(zipfile, "Fonts", IsFont_Texture)
+
         for a in self.addon:
             self.extract(zipfile, a)
 
         for w in self.wtf:
-            self.extract2(zipfile, w)
-
-        self.extract(zipfile, "Fonts", IsFont_Texture)
+            self.extract(zipfile, w)
 
         self.removeAddon()
 
@@ -648,4 +738,7 @@ class CWOWAddon(CBandizip):
         waObj.rec_go(zipfile, self.WA)
 
         print(f"从 {zipfile} 中操作完毕")
+        waObj.finish()
         
+
+#TODO: 判断wa val是key的子项?
